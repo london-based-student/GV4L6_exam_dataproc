@@ -1,0 +1,142 @@
+---
+title: "GV4L6 exam project"
+author: "Veronika Juhasz"
+date: "2024-01-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+getwd()
+
+library(tidyr)
+library(readxl)
+library(writexl)
+library(tidyverse)
+
+```
+
+## 1. Economic Perceptions
+
+**Prepare and inspect economic perceptions data**
+
+```{r}
+
+data_perc <- read.csv("ESS4e04_6-ESS5e03_5-subset.csv")
+lapply(data_perc,class)
+data_perc$cntry <- as.factor(data_perc$cntry)
+levels(data_perc$cntry)
+
+```
+
+
+**Calculating weighted average for each country by year**
+
+```{r}
+
+# calculating weighted mean satisfaction score by country
+
+avg_perc <- data_perc %>%
+  group_by(cntry, essround) %>%
+  summarize(
+    avg_economic_satisfaction = weighted.mean(stfeco, w = dweight)
+  ) %>%
+  spread(key = essround, value = avg_economic_satisfaction) %>% 
+  rename(
+    wave4_2008 = "4",
+    wave5_2010 = "5"
+  )
+
+# reversing satisfaction score between 0 and 10
+
+avg_perc_reversed <- avg_perc %>%
+ mutate(
+   wave4_2008_rev = 10 - wave4_2008,
+   wave5_2010_rev = 10 - wave5_2010
+ )
+  
+# saving as excel file
+
+write_xlsx(avg_perc_reversed, "avg_economic_satisfaction.xlsx")
+
+```
+
+## 2. Economic Perfromance
+
+**Prepare and inspect economic performance data**
+
+```{r}
+data_real <- read.csv("WEO_Data.csv", sep=";")
+lapply(data_real,class)
+data_real$ISO <- as.factor(data_real$ISO)
+data_real$X2008 <- as.numeric(data_real$X2008)
+data_real$X2009 <- as.numeric(data_real$X2009)
+data_real$X2010 <- as.numeric(data_real$X2010)
+
+data_real <- data_real %>% 
+  subset(ISO %in% c("BEL", "BGR", "CHE", "CYP", "CZE", "DEU", "DNK", "EST", "ESP", "FIN", "FRA", "GBR", "GRC", "HRV", "HUN", "IRL", "ISR", "LTU", "LVA", "NLD", "NOR", "POL", "PRT", "ROU", "RUS", "SWE", "SVN", "SVK", "TUR", "UKR")) %>% 
+  select(ISO, Country, Subject.Descriptor, Units, Country.Series.specific.Notes, X2008, X2009, X2010) %>% 
+  mutate(cntry = fct_recode(ISO,
+    "BE" = "BEL", "BG" = "BGR", "CH" = "CHE", "CY" = "CYP", "CZ" = "CZE", "DE" = "DEU", "DK" = "DNK", "EE" = "EST", "ES" = "ESP", "FI" = "FIN", "FR" = "FRA", "GB" = "GBR", "GR" = "GRC", "HR" = "HRV", "HU" = "HUN", "IE" = "IRL", "IL" = "ISR", "LT" = "LTU", "LV" = "LVA", "NL" = "NLD", "NO" = "NOR", "PL" = "POL", "PT" = "PRT", "RO" = "ROU", "RU" = "RUS", "SE" = "SWE", "SI" = "SVN", "SK" = "SVK", "TR" = "TUR", "UA" = "UKR"
+  ))
+```
+
+**Calculating economic performance score for each country by year**
+
+```{r}
+
+# 2% is the ideal level of inflation - calculate how much inflation deviates from this each year
+
+data_real_infl <- data_real %>% 
+  subset(Subject.Descriptor == "Inflation, average consumer prices") %>% 
+  mutate(diversion_from_ideal_2008 = X2008-2,
+         diversion_from_ideal_2009 = X2009-2,
+         diversion_from_ideal_2010 = X2010-2)
+
+
+# remove Ukraine as an outlier
+
+data_real_infl <- data_real_infl %>% 
+  filter(ISO != "UKR")
+
+
+# adjust deviation from ideal to scale of 0-10 (to match national economic perceptions scale)
+
+data_real_infl <- data_real_infl %>% 
+  mutate(diversion_from_ideal_2008_adjusted = diversion_from_ideal_2008*10/max(diversion_from_ideal_2008),
+         diversion_from_ideal_2009_adjusted = diversion_from_ideal_2009*10/max(diversion_from_ideal_2009),
+         diversion_from_ideal_2010_adjusted = diversion_from_ideal_2010*10/max(diversion_from_ideal_2010))
+
+```
+
+
+## 3. Calculate bias in economic perceptions
+
+```{r}
+
+# Subtract economic satisfaction score (0-10) from adjusted economic perception score (0-10) to see how much they deviate from each other in each country each year
+
+comp_perc_real <- avg_perc_reversed %>%
+  left_join(data_real_infl, by = "cntry") %>% 
+  select(Country, cntry, wave4_2008_rev, diversion_from_ideal_2008_adjusted, wave5_2010_rev, diversion_from_ideal_2010_adjusted) %>% 
+  mutate(
+    perc_real_diff_2008 = diversion_from_ideal_2008_adjusted - wave4_2008_rev,
+    perc_real_diff_2010 = diversion_from_ideal_2010_adjusted - wave5_2010_rev
+  )
+
+# outcome:
+# negative number = negatively biased
+# positive number = positively biased
+
+```
+
+
+```{r}
+
+comp_perc_real_filter <- comp_perc_real %>% 
+  select(cntry, Country, perc_real_diff_2008, perc_real_diff_2010)
+
+write_xlsx(comp_perc_real_filter, "economic_perception_bias.xlsx")
+```
+
