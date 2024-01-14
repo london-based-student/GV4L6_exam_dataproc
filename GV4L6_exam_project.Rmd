@@ -1,6 +1,6 @@
 ---
 title: "GV4L6 exam project"
-author: "Veronika Juhasz"
+author: "Candidate number: 22948"
 date: "2024-01-12"
 output: html_document
 ---
